@@ -1,0 +1,10 @@
+venv/
+.idea/
+
+*.pyc
+*.db
+*.db3
+
+__pycache__/
+*.yml
+*.yaml
