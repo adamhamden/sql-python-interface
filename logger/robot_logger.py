@@ -8,20 +8,20 @@ class RobotLogger(logger.SQLLogger):
         self.robot_id = self.cfg["sql_database"]["robot_id"]
         self.cursor.execute("ALTER TABLE log ADD COLUMN robot_id INTEGER;")
         self.cursor.execute("ALTER TABLE local_log ADD COLUMN robot_id INTEGER;")
-        self.cursor.execute("ALTER TABLE mismatched_type_log ADD COLUMN robot_id INTEGER;")
-        self.cursor.execute("ALTER TABLE local_mismatched_type_log ADD COLUMN robot_id INTEGER;")
 
-    def write(self, topic_name, data, is_keep_local_copy=False):
-        super().write(topic_name, data, is_keep_local_copy)
+    def write(self, topic_name, data, source, is_keep_local_copy=False):
+        super().write(topic_name, data, source, is_keep_local_copy)
+        self.cursor.execute("UPDATE log SET robot_id = ? WHERE ROWID = (SELECT MAX(ROWID) FROM log)", (self.robot_id,))
 
-        self.cursor.execute("UPDATE log set robot_id = ? WHERE timestamp  = (SELECT MAX(timestamp) FROM log)", (self.robot_id,))
-        self.cursor.execute("UPDATE local_log set robot_id = ? WHERE timestamp  = (SELECT MAX(timestamp) FROM local_log)", (self.robot_id,))
-        self.cursor.execute("UPDATE mismatched_type_log set robot_id = ? WHERE timestamp  = (SELECT MAX(timestamp) FROM mismatched_type_log)", (self.robot_id,))
-        self.cursor.execute("UPDATE local_mismatched_type_log set robot_id = ? WHERE timestamp  = (SELECT MAX(timestamp) FROM local_mismatched_type_log)", (self.robot_id,))
+        if is_keep_local_copy:
+            self.cursor.execute("UPDATE local_log SET robot_id = ? WHERE ROWID = (SELECT MAX(ROWID) FROM local_log)", (self.robot_id,))
 
+        self.database.commit()
 
     def __del__(self):
-        pass
+        if self.keepLocalCopy:
+            self.backup()
+            self.cursor.execute("DROP TABLE IF EXISTS local_log;")
 
     def backup(self):
         self.local_db_name = "local_" + self.sql_database
@@ -32,14 +32,8 @@ class RobotLogger(logger.SQLLogger):
                             "timestamp TEXT NOT NULL, " +
                             "topic_id TEXT NOT NULL, " +
                             "data BLOB NOT NULL, " +
-                            "robot_id INTEGER"
-                            ")"
-                            )
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS " +
-                            "local_db.local_mismatched_type_log(" +
-                            "timestamp TEXT NOT NULL, " +
-                            "topic_id TEXT NOT NULL, " +
-                            "data BLOB NOT NULL, " +
+                            "source TEXT NOT NULL, " +
+                            "mismatched BOOLEAN, "+
                             "robot_id INTEGER"
                             ")"
                             )
@@ -52,14 +46,9 @@ class RobotLogger(logger.SQLLogger):
                             )
 
         self.cursor.execute(
-            "INSERT INTO local_db.local_log SELECT DISTINCT * FROM (SELECT * FROM log UNION ALL SELECT * FROM local_db.local_log)")
-        self.cursor.execute(
-            "INSERT INTO local_db.local_mismatched_type_log SELECT DISTINCT * FROM (SELECT * FROM local_mismatched_type_log UNION ALL SELECT * FROM local_db.local_mismatched_type_log)")
-        self.cursor.execute(
-            "INSERT INTO local_db.topics SELECT DISTINCT * FROM (SELECT * FROM topics UNION ALL SELECT * FROM local_db.topics)")
+            "INSERT INTO local_db.local_log SELECT * FROM local_log EXCEPT SELECT * FROM local_db.local_log")
+        self.cursor.execute("INSERT INTO local_db.topics SELECT * FROM topics EXCEPT SELECT * FROM local_db.topics")
 
-        self.cursor.execute("DROP TABLE IF EXISTS local_log;")
-        self.cursor.execute("DROP TABLE IF EXISTS local_mismatched_type_log;")
+        self.cursor.execute("DETACH DATABASE 'local_db'")
         self.local_db_connection.commit()
         self.database.commit()
-

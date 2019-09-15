@@ -7,12 +7,11 @@ class TestStateLogger(unittest.TestCase):
 
 
     def testInherit(self):
-        rlogger = sl.SQLLogger()
+        rlogger = rl.RobotLogger()
         rlogger.add_topic('Age', 'int')
-        rlogger.write('Age', 1234, True)
-        rlogger.backup()
-        rlogger.write('Age', 5678, True)
-        rlogger.backup()
-        rlogger.write('Age',9910013, True)
+        rlogger.write('Age', 1234, "file.txt", True)
+        rlogger.write('Age', "somee1", "file.txt", False)
+        rlogger.write('Age', "somee", "file.txt", True)
+        rlogger.write('Age',"Hello", "file.txt", True)
 
 
